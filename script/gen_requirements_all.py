@@ -1,70 +1,85 @@
 #!/usr/bin/env python3
 """Generate an updated requirements_all.txt."""
+import fnmatch
 import importlib
 import os
 import pkgutil
 import re
 import sys
-import fnmatch
+
+from script.manifest.requirements import gather_requirements_from_manifests
 
 COMMENT_REQUIREMENTS = (
-    'RPi.GPIO',
-    'raspihats',
-    'rpi-rf',
     'Adafruit-DHT',
     'Adafruit_BBIO',
-    'fritzconnection',
-    'pybluez',
+    'avion',
     'beacontools',
+    'blinkt',
     'bluepy',
+    'bme680',
+    'credstash',
+    'decora',
+    'envirophat',
+    'evdev',
+    'face_recognition',
+    'fritzconnection',
+    'i2csense',
     'opencv-python',
+    'py_noaa',
+    'VL53L1X2',
+    'pybluez',
+    'pycups',
+    'PySwitchbot',
+    'pySwitchmate',
+    'python-eq3bt',
     'python-lirc',
     'pyuserinput',
-    'evdev',
-    'pycups',
-    'python-eq3bt',
-    'avion',
-    'decora',
-    'face_recognition',
-    'blinkt',
+    'raspihats',
+    'rpi-rf',
+    'RPi.GPIO',
     'smbus-cffi',
-    'envirophat',
-    'i2csense',
-    'credstash',
-    'bme680',
-    'homekit',
-    'py_noaa',
 )
 
 TEST_REQUIREMENTS = (
+    'aioambient',
     'aioautomatic',
+    'aiobotocore',
     'aiohttp_cors',
     'aiohue',
     'aiounifi',
     'apns2',
+    'av',
+    'axis',
     'caldav',
     'coinmarketcap',
     'defusedxml',
     'dsmr_parser',
+    'eebrightbox',
+    'emulated_roku',
     'ephem',
     'evohomeclient',
-    'feedparser',
+    'feedparser-homeassistant',
     'foobot_async',
-    'gTTS-token',
     'geojson_client',
-    'georss_client',
+    'georss_generic_client',
+    'gTTS-token',
+    'ha-ffmpeg',
     'hangups',
     'HAP-python',
-    'ha-ffmpeg',
+    'hass-nabucasa',
     'haversine',
     'hbmqtt',
     'hdate',
     'holidays',
     'home-assistant-frontend',
+    'homekit[IP]',
     'homematicip',
     'influxdb',
-    'libpurecoollink',
+    'jsonpath',
+    'libpurecool',
     'libsoundtouch',
+    'luftdaten',
+    'mbddns',
     'mficlient',
     'numpy',
     'paho-mqtt',
@@ -77,12 +92,16 @@ TEST_REQUIREMENTS = (
     'pyblackbird',
     'pydeconz',
     'pydispatcher',
+    'pyheos',
     'pyhomematic',
     'pylitejet',
     'pymonoprice',
     'pynx584',
     'pyopenuv',
     'pyotp',
+    'pyps4-homeassistant',
+    'pysmartapp',
+    'pysmartthings',
     'pysonos',
     'pyqwikswitch',
     'PyRMVtransport',
@@ -90,10 +109,14 @@ TEST_REQUIREMENTS = (
     'pyspcwebgw',
     'python-forecastio',
     'python-nest',
-    'pytradfri\\[async\\]',
+    'python_awair',
+    'pytradfri[async]',
     'pyunifi',
     'pyupnp-async',
     'pywebpush',
+    'pyHS100',
+    'PyNaCl',
+    'regenmaschine',
     'restrictedpython',
     'rflink',
     'ring_doorbell',
@@ -103,20 +126,26 @@ TEST_REQUIREMENTS = (
     'smhi-pkg',
     'somecomfort',
     'sqlalchemy',
+    'srpenergy',
     'statsd',
+    'toonapilib',
     'uvcclient',
+    'vsure',
     'warrant',
     'pythonwhois',
     'wakeonlan',
     'vultr',
     'YesssSMS',
     'ruamel.yaml',
+    'zigpy-homeassistant',
+    'bellows-homeassistant',
 )
 
 IGNORE_PACKAGES = (
-    'homeassistant.components.recorder.models',
+    'homeassistant.components.hangouts.hangups_utils',
+    'homeassistant.components.cloud.client',
     'homeassistant.components.homekit.*',
-    'homeassistant.components.hangouts.hangups_utils'
+    'homeassistant.components.recorder.models',
 )
 
 IGNORE_PIN = ('colorlog>2.1,<3', 'keyring>=9.3,<10.0', 'urllib3')
@@ -139,6 +168,13 @@ enum34==1000000000.0.0
 
 # This is a old unmaintained library and is replaced with pycryptodome
 pycrypto==1000000000.0.0
+
+# Contains code to modify Home Assistant to work around our rules
+python-systemair-savecair==1000000000.0.0
+
+# Newer version causes pylint to take forever
+# https://github.com/timothycrosley/isort/issues/848
+isort==4.3.4
 """
 
 
@@ -179,35 +215,8 @@ def gather_modules():
 
     errors = []
 
-    for package in sorted(
-            explore_module('homeassistant.components', True) +
-            explore_module('homeassistant.scripts', True) +
-            explore_module('homeassistant.auth', True)):
-        try:
-            module = importlib.import_module(package)
-        except ImportError:
-            for pattern in IGNORE_PACKAGES:
-                if fnmatch.fnmatch(package, pattern):
-                    break
-            else:
-                errors.append(package)
-            continue
-
-        if not getattr(module, 'REQUIREMENTS', None):
-            continue
-
-        for req in module.REQUIREMENTS:
-            if req in IGNORE_REQ:
-                continue
-            if '://' in req:
-                errors.append(
-                    "{}[Only pypi dependencies are allowed: {}]".format(
-                        package, req))
-            if req.partition('==')[1] == '' and req not in IGNORE_PIN:
-                errors.append(
-                    "{}[Please pin requirement {}, see {}]".format(
-                        package, req, URL_PIN))
-            reqs.setdefault(req, []).append(package)
+    gather_requirements_from_manifests(process_requirements, errors, reqs)
+    gather_requirements_from_modules(errors, reqs)
 
     for key in reqs:
         reqs[key] = sorted(reqs[key],
@@ -222,12 +231,47 @@ def gather_modules():
     return reqs
 
 
+def gather_requirements_from_modules(errors, reqs):
+    """Collect the requirements from the modules directly."""
+    for package in sorted(
+            explore_module('homeassistant.scripts', True) +
+            explore_module('homeassistant.auth', True)):
+        try:
+            module = importlib.import_module(package)
+        except ImportError as err:
+            for pattern in IGNORE_PACKAGES:
+                if fnmatch.fnmatch(package, pattern):
+                    break
+            else:
+                print("{}: {}".format(package.replace('.', '/') + '.py', err))
+                errors.append(package)
+            continue
+
+        if getattr(module, 'REQUIREMENTS', None):
+            process_requirements(errors, module.REQUIREMENTS, package, reqs)
+
+
+def process_requirements(errors, module_requirements, package, reqs):
+    """Process all of the requirements."""
+    for req in module_requirements:
+        if req in IGNORE_REQ:
+            continue
+        if '://' in req:
+            errors.append(
+                "{}[Only pypi dependencies are allowed: {}]".format(
+                    package, req))
+        if req.partition('==')[1] == '' and req not in IGNORE_PIN:
+            errors.append(
+                "{}[Please pin requirement {}, see {}]".format(
+                    package, req, URL_PIN))
+        reqs.setdefault(req, []).append(package)
+
+
 def generate_requirements_list(reqs):
     """Generate a pip file based on requirements."""
     output = []
     for pkg, requirements in sorted(reqs.items(), key=lambda item: item[0]):
-        for req in sorted(requirements,
-                          key=lambda name: (len(name.split('.')), name)):
+        for req in sorted(requirements):
             output.append('\n# {}'.format(req))
 
         if comment_requirement(pkg):
@@ -259,7 +303,7 @@ def requirements_test_output(reqs):
     output.append('\n')
     filtered = {key: value for key, value in reqs.items()
                 if any(
-                    re.search(r'(^|#){}($|[=><])'.format(ign),
+                    re.search(r'(^|#){}($|[=><])'.format(re.escape(ign)),
                               key) is not None for ign in TEST_REQUIREMENTS)}
     output.append(generate_requirements_list(filtered))
 
