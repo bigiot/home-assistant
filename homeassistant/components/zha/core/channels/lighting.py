@@ -29,15 +29,20 @@ class ColorChannel(ZigbeeChannel):
     async def async_configure(self):
         """Configure channel."""
         await self.fetch_color_capabilities(False)
+        await super().async_configure()
 
     async def async_initialize(self, from_cache):
         """Initialize channel."""
         await self.fetch_color_capabilities(True)
+        await self.get_attribute_value("color_temperature", from_cache=from_cache)
+        await self.get_attribute_value("current_x", from_cache=from_cache)
+        await self.get_attribute_value("current_y", from_cache=from_cache)
 
     async def fetch_color_capabilities(self, from_cache):
         """Get the color configuration."""
         capabilities = await self.get_attribute_value(
-            'color_capabilities', from_cache=from_cache)
+            "color_capabilities", from_cache=from_cache
+        )
 
         if capabilities is None:
             # ZCL Version 4 devices don't support the color_capabilities
@@ -46,7 +51,8 @@ class ColorChannel(ZigbeeChannel):
             # temperature.
             capabilities = self.CAPABILITIES_COLOR_XY
             result = await self.get_attribute_value(
-                'color_temperature', from_cache=from_cache)
+                "color_temperature", from_cache=from_cache
+            )
 
             if result is not self.UNSUPPORTED_ATTRIBUTE:
                 capabilities |= self.CAPABILITIES_COLOR_TEMP
